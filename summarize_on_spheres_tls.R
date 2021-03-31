@@ -37,8 +37,9 @@ z <- tlsData@data$Z #Subtract 2 for sensor height
 height = 2
 thetaDiv=.5
 phiDiv=.5
+grdDist=.25
 
-on_sphere <- function(tlsData, radius, height, thetaDiv=1, phiDiv=1){
+on_sphere <- function(tlsData, radius, height, thetaDiv=1, phiDiv=1, grdDist=.5){
   r <- radius
   x <- tlsData@data$X
   y <- tlsData@data$Y
@@ -75,7 +76,7 @@ on_sphere <- function(tlsData, radius, height, thetaDiv=1, phiDiv=1){
   }
 
   #Filter points that would hit the ground before hitting the sphere
-  just_sphere <- cld %>% filter(cld$zs > -height+.2)
+  just_sphere <- cld %>% filter(cld$zs > -height)
   #Filter out points that would strike the sphere before the ground
   just_grd <- setdiff(cld, just_sphere)
 
@@ -93,17 +94,16 @@ on_sphere <- function(tlsData, radius, height, thetaDiv=1, phiDiv=1){
   npass_sphere <- just_sphere %>% filter(dist_act < dist_sphere)
 
   #Determine coordinates where points would intersect the ground
-  just_grd$grd_z <- -r
+  just_grd$grd_z <- -height
   just_grd$t <- just_grd$grd_z/just_grd$z
   just_grd$grd_x <- just_grd$t*just_grd$x
   just_grd$grd_y <- just_grd$t*just_grd$y
-  just_grd$slp_grd <- just_grd$grd_z/(sqrt(just_grd$grd_x^2+ just_grd$grd_y^2))
   just_grd$dist_act <- sqrt(just_grd$x^2 + just_grd$y^2 + just_grd$z^2)
-  just_grd$dist_grd <- sqrt(just_grd$grd_x^2 + just_grd$grd_y^2 + just_grd$grd_z^2)
-  pass_grd <- just_grd %>% filter(dist_act >= dist_grd)
+  just_grd$dist_grd <- sqrt(just_grd$grd_x^2 + just_grd$grd_y^2 + (just_grd$grd_z)^2)
   npass_grd <- just_grd %>% filter(dist_act < dist_grd)
+  pass_grd <- just_grd %>% filter(dist_act >= dist_grd)
 
-  #Create table of x, y, z values where each point did or would have intersected the dome
+  #Create table of x, y, z values where each point did or would have intersected the ground
   just_sphere$xf <- just_sphere$xs 
   just_sphere$yf <- just_sphere$ys 
   just_sphere$zf <- just_sphere$zs 
@@ -111,7 +111,7 @@ on_sphere <- function(tlsData, radius, height, thetaDiv=1, phiDiv=1){
   just_grd$yf <- just_grd$grd_y
   just_grd$zf <- just_grd$grd_z
 
-  #Create table of x, y, z values where each point that passed the sphere intersected it
+  #Create table of x, y, z values where each point that passed the ground intersected it
   pass_sphere$xf <- pass_sphere$xs 
   pass_sphere$yf <- pass_sphere$ys 
   pass_sphere$zf <- pass_sphere$zs 
@@ -163,25 +163,18 @@ on_sphere <- function(tlsData, radius, height, thetaDiv=1, phiDiv=1){
   gridP <- pointCount(r_blank, p3)
   gridNP <- pointCount(r_blank, np3)
   
-  gs <- as.data.frame(cart2pol(x=just_grd$xf, 
-                              y=just_grd$yf))
-  gp <- as.data.frame(cart2pol(x=pass_grd$xf, 
-                              y=pass_grd$yf))
-  gnp <- as.data.frame(cart2pol(x=npass_grd$xf, 
-                               y=npass_grd$yf))
-  
-  gs$theta <- gs$theta*(180/pi)
-  gp$theta <- gp$theta*(180/pi)
-  gnp$theta <- gnp$theta*(180/pi)
+  gs <- just_grd[,c("xf", "yf")]
+  gp <- pass_grd[,c("xf", "yf")]
+  gnp <- npass_grd[,c("xf", "yf")]
   
   gs2 <- st_multipoint(x=as.matrix(gs), dim="XY")
   gp2 <- st_multipoint(x=as.matrix(gp), dim="XY")
   gnp2 <- st_multipoint(x=as.matrix(gnp), dim="XY")
   
-  r_blank2 <- raster(ncol= 360/thetaDiv, 
-                    nrow = r/thetaDiv, 
-                    xmn=-180, xmx=180, 
-                    ymn=0, 
+  r_blank2 <- raster(ncol= r/grdDist, 
+                    nrow = r/grdDist, 
+                    xmn=-r, xmx=r, 
+                    ymn=-r, 
                     ymx=r)
   
   gridSg <- pointCount(r_blank2, gs2)
@@ -194,10 +187,12 @@ on_sphere <- function(tlsData, radius, height, thetaDiv=1, phiDiv=1){
   gridPg2 <- mask(gridPg, circle)
   gridNPg2 <- mask(gridNPg, circle)
   
+  s_prop <- 1-(gridP/gridS)
+  g_prop <- 1-(gridPg2/gridSg2)
+  
   
   outLst <- as.list(gridNP, gridP, gridS, gridNPg2, gridPg2, gridSg2)
   return(outLst)
 }
 
-testOut <- on_sphere(tlsData=tlsData, radius=radius, height=height, thetaDiv=thetaDiv, phiDiv=phiDiv)
-
+testOut <- on_sphere(tlsData=tlsData, radius=radius, height=height, thetaDiv=thetaDiv, phiDiv=phiDiv, grdDist=grdDist)
