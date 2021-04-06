@@ -31,7 +31,7 @@ tlsData <- readLAS("D:/lidar/normalize/norm_clf_BLK360 Scan.las")
 #tlsData <- decimate_points(tlsData1, homogenize(10, 1))
 
 #Define radius of sphere
-radii <- c(2, 4, 6, 8, 10) 
+radii <- c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10) 
 #Create points in the 3D space
 x <- tlsData@data$X
 y <- tlsData@data$Y
@@ -47,10 +47,7 @@ on_sphere_multi <- function(tlsData, radii, height, thetaDiv=1, phiDiv=1){
   for(ra in radii){
     if(ra == radii[1]){
       r <- ra
-      x <- tlsData@data$X
-      y <- tlsData@data$Y
-      z <- tlsData@data$Z - height
-      cld <- as.data.frame(cbind(x=x, y=y, z=z))
+      cld <- as.data.frame(cbind(x=tlsData@data$X, y=tlsData@data$Y, z=tlsData@data$Z - height))
       
       #Calculate coordinates where each ray would intersect the sphere
       cld$a <- cld$x^2 + cld$y^2 + cld$z^2
@@ -69,17 +66,10 @@ on_sphere_multi <- function(tlsData, radii, height, thetaDiv=1, phiDiv=1){
       cld$slp2 <- cld$z2/(sqrt(cld$x2^2+ cld$y2^2))
       
       #Find correct coordinate based on slope
-      for(i in 1:nrow(cld)){
-        if(sign(cld$slp[i]) == sign(cld$slp1[i])){
-          cld$xs <- cld$x1
-          cld$ys <- cld$y2
-          cld$zs <- cld$z2
-        }else{
-          cld$xs <- cld$x2
-          cld$ys <- cld$y2
-          cld$zs <- cld$z2
-        }
-      }
+      cld<-cld %>% mutate(xs = case_when(sign(slp)==sign(slp1)~ x1,sign(slp)!=sign(slp1)~x2),
+                          ys = case_when(sign(slp)==sign(slp1)~ y1,sign(slp)!=sign(slp1)~y2),
+                          zs = case_when(sign(slp)==sign(slp1)~ z1,sign(slp)!=sign(slp1)~z2))
+
       
       #Filter points that would hit the ground before hitting the sphere
       just_sphere <- cld %>% filter(cld$zs > -height)
@@ -101,31 +91,19 @@ on_sphere_multi <- function(tlsData, radii, height, thetaDiv=1, phiDiv=1){
       pass_sphere_g <- just_grd %>% filter(z <= -height)
       
       #Create table of x, y, z values where each point did or would have intersected the ground
-      just_sphere$xf <- just_sphere$xs 
-      just_sphere$yf <- just_sphere$ys 
-      just_sphere$zf <- just_sphere$zs 
-      just_grd$xf <- just_grd$xs
-      just_grd$yf <- just_grd$ys
-      just_grd$zf <- just_grd$zs
       allF <- bind_rows(just_sphere, just_grd)
       
       #Create table of x, y, z values where each point that passed the ground intersected it
-      pass_sphere$xf <- pass_sphere$xs 
-      pass_sphere$yf <- pass_sphere$ys 
-      pass_sphere$zf <- pass_sphere$zs 
-      pass_sphere_g$xf <- pass_sphere_g$xs
-      pass_sphere_g$yf <- pass_sphere_g$ys
-      pass_sphere_g$zf <- pass_sphere_g$zs
       passF <- bind_rows(pass_sphere, pass_sphere_g)
       
       
       #Convert from Cartesian to spherical coordinates
-      s <- as.data.frame(cart2sph(x=allF$xf, 
-                                  y=allF$yf, 
-                                  z=allF$zf))
-      p <- as.data.frame(cart2sph(x=passF$xf, 
-                                  y=passF$yf, 
-                                  z=passF$zf))
+      s <- as.data.frame(cart2sph(x=allF$xs, 
+                                  y=allF$ys, 
+                                  z=allF$zs))
+      p <- as.data.frame(cart2sph(x=passF$xs, 
+                                  y=passF$ys, 
+                                  z=passF$zs))
       
       s2 <- s[,c(1,2)]
       p2 <- p[,c(1,2)]
@@ -153,10 +131,7 @@ on_sphere_multi <- function(tlsData, radii, height, thetaDiv=1, phiDiv=1){
       out <- (1-(gridP/gridS))*null2
     }else if(ra == radii[2]){
       r <- ra
-      x <- tlsData@data$X
-      y <- tlsData@data$Y
-      z <- tlsData@data$Z - height
-      cld <- as.data.frame(cbind(x=x, y=y, z=z))
+      cld <- as.data.frame(cbind(x=tlsData@data$X, y=tlsData@data$Y, z=tlsData@data$Z - height))
       
       #Calculate coordinates where each ray would intersect the sphere
       cld$a <- cld$x^2 + cld$y^2 + cld$z^2
@@ -175,17 +150,10 @@ on_sphere_multi <- function(tlsData, radii, height, thetaDiv=1, phiDiv=1){
       cld$slp2 <- cld$z2/(sqrt(cld$x2^2+ cld$y2^2))
       
       #Find correct coordinate based on slope
-      for(i in 1:nrow(cld)){
-        if(sign(cld$slp[i]) == sign(cld$slp1[i])){
-          cld$xs <- cld$x1
-          cld$ys <- cld$y2
-          cld$zs <- cld$z2
-        }else{
-          cld$xs <- cld$x2
-          cld$ys <- cld$y2
-          cld$zs <- cld$z2
-        }
-      }
+      cld<-cld %>% mutate(xs = case_when(sign(slp)==sign(slp1)~ x1,sign(slp)!=sign(slp1)~x2),
+                          ys = case_when(sign(slp)==sign(slp1)~ y1,sign(slp)!=sign(slp1)~y2),
+                          zs = case_when(sign(slp)==sign(slp1)~ z1,sign(slp)!=sign(slp1)~z2))
+      
       
       #Filter points that would hit the ground before hitting the sphere
       just_sphere <- cld %>% filter(cld$zs > -height)
@@ -207,31 +175,19 @@ on_sphere_multi <- function(tlsData, radii, height, thetaDiv=1, phiDiv=1){
       pass_sphere_g <- just_grd %>% filter(z <= -height)
       
       #Create table of x, y, z values where each point did or would have intersected the ground
-      just_sphere$xf <- just_sphere$xs 
-      just_sphere$yf <- just_sphere$ys 
-      just_sphere$zf <- just_sphere$zs 
-      just_grd$xf <- just_grd$xs
-      just_grd$yf <- just_grd$ys
-      just_grd$zf <- just_grd$zs
       allF <- bind_rows(just_sphere, just_grd)
       
       #Create table of x, y, z values where each point that passed the ground intersected it
-      pass_sphere$xf <- pass_sphere$xs 
-      pass_sphere$yf <- pass_sphere$ys 
-      pass_sphere$zf <- pass_sphere$zs 
-      pass_sphere_g$xf <- pass_sphere_g$xs
-      pass_sphere_g$yf <- pass_sphere_g$ys
-      pass_sphere_g$zf <- pass_sphere_g$zs
       passF <- bind_rows(pass_sphere, pass_sphere_g)
       
       
       #Convert from Cartesian to spherical coordinates
-      s <- as.data.frame(cart2sph(x=allF$xf, 
-                                  y=allF$yf, 
-                                  z=allF$zf))
-      p <- as.data.frame(cart2sph(x=passF$xf, 
-                                  y=passF$yf, 
-                                  z=passF$zf))
+      s <- as.data.frame(cart2sph(x=allF$xs, 
+                                  y=allF$ys, 
+                                  z=allF$zs))
+      p <- as.data.frame(cart2sph(x=passF$xs, 
+                                  y=passF$ys, 
+                                  z=passF$zs))
       
       s2 <- s[,c(1,2)]
       p2 <- p[,c(1,2)]
@@ -263,10 +219,7 @@ on_sphere_multi <- function(tlsData, radii, height, thetaDiv=1, phiDiv=1){
       out2 <- stack(mask1, out)
     }else{
       r <- ra
-      x <- tlsData@data$X
-      y <- tlsData@data$Y
-      z <- tlsData@data$Z - height
-      cld <- as.data.frame(cbind(x=x, y=y, z=z))
+      cld <- as.data.frame(cbind(x=tlsData@data$X, y=tlsData@data$Y, z=tlsData@data$Z - height))
       
       #Calculate coordinates where each ray would intersect the sphere
       cld$a <- cld$x^2 + cld$y^2 + cld$z^2
@@ -285,17 +238,10 @@ on_sphere_multi <- function(tlsData, radii, height, thetaDiv=1, phiDiv=1){
       cld$slp2 <- cld$z2/(sqrt(cld$x2^2+ cld$y2^2))
       
       #Find correct coordinate based on slope
-      for(i in 1:nrow(cld)){
-        if(sign(cld$slp[i]) == sign(cld$slp1[i])){
-          cld$xs <- cld$x1
-          cld$ys <- cld$y2
-          cld$zs <- cld$z2
-        }else{
-          cld$xs <- cld$x2
-          cld$ys <- cld$y2
-          cld$zs <- cld$z2
-        }
-      }
+      cld<-cld %>% mutate(xs = case_when(sign(slp)==sign(slp1)~ x1,sign(slp)!=sign(slp1)~x2),
+                          ys = case_when(sign(slp)==sign(slp1)~ y1,sign(slp)!=sign(slp1)~y2),
+                          zs = case_when(sign(slp)==sign(slp1)~ z1,sign(slp)!=sign(slp1)~z2))
+      
       
       #Filter points that would hit the ground before hitting the sphere
       just_sphere <- cld %>% filter(cld$zs > -height)
@@ -317,31 +263,19 @@ on_sphere_multi <- function(tlsData, radii, height, thetaDiv=1, phiDiv=1){
       pass_sphere_g <- just_grd %>% filter(z <= -height)
       
       #Create table of x, y, z values where each point did or would have intersected the ground
-      just_sphere$xf <- just_sphere$xs 
-      just_sphere$yf <- just_sphere$ys 
-      just_sphere$zf <- just_sphere$zs 
-      just_grd$xf <- just_grd$xs
-      just_grd$yf <- just_grd$ys
-      just_grd$zf <- just_grd$zs
       allF <- bind_rows(just_sphere, just_grd)
       
       #Create table of x, y, z values where each point that passed the ground intersected it
-      pass_sphere$xf <- pass_sphere$xs 
-      pass_sphere$yf <- pass_sphere$ys 
-      pass_sphere$zf <- pass_sphere$zs 
-      pass_sphere_g$xf <- pass_sphere_g$xs
-      pass_sphere_g$yf <- pass_sphere_g$ys
-      pass_sphere_g$zf <- pass_sphere_g$zs
       passF <- bind_rows(pass_sphere, pass_sphere_g)
       
       
       #Convert from Cartesian to spherical coordinates
-      s <- as.data.frame(cart2sph(x=allF$xf, 
-                                  y=allF$yf, 
-                                  z=allF$zf))
-      p <- as.data.frame(cart2sph(x=passF$xf, 
-                                  y=passF$yf, 
-                                  z=passF$zf))
+      s <- as.data.frame(cart2sph(x=allF$xs, 
+                                  y=allF$ys, 
+                                  z=allF$zs))
+      p <- as.data.frame(cart2sph(x=passF$xs, 
+                                  y=passF$ys, 
+                                  z=passF$zs))
       
       s2 <- s[,c(1,2)]
       p2 <- p[,c(1,2)]
