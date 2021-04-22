@@ -128,7 +128,7 @@ on_sphere_multi <- function(tlsData, radii, height, thetaDiv=1, phiDiv=1){
       null1 <- raster::calc(gridS, function(x){x[x<=0]<-NA; return(x)})
       null2 <- null1 > 0
       
-      out <- (1-(gridP/gridS))*null2
+      out <- (1-(gridP/gridS))*null2 #raster
     }else if(ra == radii[2]){
       r <- ra
       cld <- as.data.frame(cbind(x=tlsData@data$X, y=tlsData@data$Y, z=tlsData@data$Z - height))
@@ -206,7 +206,7 @@ on_sphere_multi <- function(tlsData, radii, height, thetaDiv=1, phiDiv=1){
       s3 <- st_multipoint(x=as.matrix(s2), dim="XY")
       p3 <- st_multipoint(x=as.matrix(p2), dim="XY")
       
-      gridPre <- gridS - gridP
+      gridPre <- gridS - gridP #substracting all - passed 1radius
       
       gridS <- pointCount(r_blank, s3) - gridPre
       gridP <- pointCount(r_blank, p3) 
