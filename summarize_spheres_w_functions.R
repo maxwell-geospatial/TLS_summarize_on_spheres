@@ -24,11 +24,11 @@ library(sf)
 
 #Declaring variables ----
 #Read in normalized LAS data
-tlsData <- readLAS("../FS_fuel_prediction/raw_data/Compartment10_laz_files/C10_Plot_10East.laz")
-tlsData<-clip_circle(tlsData,0,0,10)
+tlsData <- readLAS("D:/lidar/normalize/norm_clf_BLK360 Scan.las")
+#tlsData<-clip_circle(tlsData,0,0,10)
 
 #Define radius of sphere
-radii <- c(1, 2, 3, 4, 5)#, 6, 7, 8, 9, 10) 
+radii <- c(2, 4, 6, 8, 10)#, 6, 7, 8, 9, 10) 
 
 #Declaring constants ----
 height = 2 #height of the scanner 
@@ -152,26 +152,26 @@ on_sphere_multi_v2 <- function(tlsData, radii, height, thetaDiv=1, phiDiv=1){
       gridS <- pointCount(r_blank,list_point$s3) #create point object of points on the sphere
       gridP <- pointCount(r_blank, list_point$p3)#create point object of points that pass the sphere
 
-      null1 <- raster::calc(gridS, function(x){x[x<=0]<-NA; return(x)}) # make raster??
-      null2 <- null1 > 0 #??
+      null1 <- raster::calc(gridS, function(x){x[x<=0]<-NA; return(x)}) #If count in cell is zero, recode to NA since no returns were recorded (canopy gap)
+      null2 <- null1 > 0 ## Make a 0/1 mask for NA vs. Value
 
       out <- (1-(gridP/gridS))*null2 #create raster for first radius
     }else if(ra == radii[2]){# logical statement 2nd radius
       r<-ra # read radius
       list_point<-cld_fun(r=r,tlsData = tlsData) %>% sphere_func() # apply functions to obtain spherical coordinates 
       
-      gridPre <- gridS - gridP # make temporal raster of difference. 
+      gridPre <- gridS - gridP # make temporal raster of difference. This represents number of points remaining once returns from prior bins are subtracted.
     
       gridS <- pointCount(r_blank, list_point$s3) - gridPre # create point object of points on the sphere minus the previous sphere
       gridP <- pointCount(r_blank, list_point$p3) #create point object of points that pass the sphere
     
       mask1 <- out # read previous layer. 
-      mask2 <- raster::calc(mask1, function(x){x[x==1]<-NA; return(x)}) #??
-      mask3 <- mask2 >= 0 #??
+      mask2 <- raster::calc(mask1, function(x){x[x==1]<-NA; return(x)}) #If proportion of returns in prior bin is 1 then recode to NA since no returns passed to current bin
+      mask3 <- mask2 >= 0 #Make a 0/1 mask for NA vs. cells with values
     
       out <- (1-(gridP/gridS)) # make faster for 2nd radius
-      out2 <- stack(mask1, out) # stack rasters
-    }else{ # logic stament n_th radius
+      out2 <- stack(mask1, out) # stack raster grids
+    }else{ # logic statement n_th radius
       r<-ra # read data
       list_point<-cld_fun(r=r,tlsData = tlsData) %>% sphere_func() # apply functions to obtain spherical coordinates
       
@@ -181,11 +181,11 @@ on_sphere_multi_v2 <- function(tlsData, radii, height, thetaDiv=1, phiDiv=1){
       gridP <- pointCount(r_blank, list_point$p3) #create point object of points that pass the sphere
       
       mask1 <- out # read raster of previous radius.
-      mask2 <- raster::calc(mask1, function(x){x[x==1]<-NA; return(x)}) #??
-      mask3 <- mask2 >= 0 #??
+      mask2 <- raster::calc(mask1, function(x){x[x==1]<-NA; return(x)}) ##If proportion of returns in prior bin is 1 then recode to NA since no returns passed to current bin
+      mask3 <- mask2 >= 0 #Make a 0/1 mask for NA vs. cells with values
       
       out <- (1-(gridP/gridS))*mask3 # create raster of n radius. 
-      out2 <- stack(out2, out) # stack rasters of n radius 
+      out2 <- stack(out2, out) # stack raster grids of n radius 
     }
   }#Close radius loop
   names(out2) <- as.character(radii)# name layers

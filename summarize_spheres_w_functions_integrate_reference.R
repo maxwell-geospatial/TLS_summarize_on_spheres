@@ -1,0 +1,273 @@
+# Summarize TLS on multiple spheres. 
+# 2021 April
+# Aaron Maxwell & Luis Andres Guillen
+
+# AIM: This codes analysis TLS using spherical transformation to understand
+# point density at different radius from the scan
+# ARGUMENTS: Variables that need to be uploaded are the LAS files, radius and constants. 
+# OUTPUT: Raster object or tif file.
+
+#Loading libraries ----
+library(rlas)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+library(geometry)
+library(MASS)
+library(raster)
+library(sampSurf)
+library(rgdal)
+library(raster)
+library(lidR)
+library(tmap)
+library(sf)
+
+#Declaring variables ----
+#Read in shed scan reference
+#refScan <- readLAS("D:/lidar/Shedtest1.las")
+
+#mycsf <- csf(TRUE, 0.5, 0.5, time_step = 0.65) #Define settings for ground segmentation algorithm
+#las_clf <- classify_ground(refScan, mycsf) #Classify to ground (2) and not ground (1)
+
+#las_norm <- normalize_height(las_clf, tin()) #Normalize Z relative to ground (Z is now height above ground)
+
+#writeLAS(las_norm, "D:/lidar/normalize/shed_norm.las") #Save normalized file to disk
+
+refData <- readLAS("D:/lidar/Shedtest1.las") #Read in normalized reference
+tlsData <- readLAS("D:/lidar/normalize/norm_clf_BLK360 Scan.las") # Read in normalized scan
+
+#Define radius of sphere
+radii <- c(2, 4, 6, 8, 10) 
+
+#Declaring constants ----
+height = 2 #height of the scanner 
+thetaDiv=.5 #
+phiDiv=.5 #
+grdDist=.25 #
+r_blank <- raster(ncol= 360/thetaDiv, nrow = 180/phiDiv, 
+                  xmn=-180, xmx=180,ymn=-90,ymx=90) # blank raster to fill in data
+
+# Declaring functions ----
+
+cld_fun<-function(r,tlsData, type="Data"){
+  #Aim: Calculate coordinates where each ray would intersect the sphere
+  #Arguments:r = radius; tlsData: LAS object
+  #Output: cld dataframe. 
+  if (type=="Data") {  
+  # create a dataframe to calculate distances to the scanner
+    cld <- as.data.frame(cbind(x=tlsData@data$X, y=tlsData@data$Y, z=tlsData@data$Z - height))
+    cld$a <- cld$x^2 + cld$y^2 + cld$z^2
+    cld$t1 <- -sqrt(0^2-(4*cld$a*(-r^2)))/(2*cld$a)
+    cld$t2 <- sqrt(0^2-(4*cld$a*(-r^2)))/(2*cld$a)
+    cld$x1 <- cld$x*cld$t1
+    cld$y1 <- cld$y*cld$t1
+    cld$z1 <- cld$z*cld$t1
+    cld$x2 <- cld$x*cld$t2
+    cld$y2 <- cld$y*cld$t2
+    cld$z2 <- cld$z*cld$t2
+    cld$slp <- cld$z/(sqrt(cld$x^2+ cld$y^2))
+    cld$slp1 <- cld$z1/(sqrt(cld$x1^2+ cld$y1^2))
+    cld$slp2 <- cld$z2/(sqrt(cld$x2^2+ cld$y2^2))
+    
+    #Find correct coordinate based on slope
+    cld<-cld %>% mutate(xs = case_when(sign(slp)==sign(slp1)~ x1,sign(slp)!=sign(slp1)~x2),
+                        ys = case_when(sign(slp)==sign(slp1)~ y1,sign(slp)!=sign(slp1)~y2),
+                        zs = case_when(sign(slp)==sign(slp1)~ z1,sign(slp)!=sign(slp1)~z2))
+  } else {
+    # create a dataframe to calculate distances to the scanner
+    cld <- as.data.frame(cbind(x=tlsData@data$X, y=tlsData@data$Y, z=tlsData@data$Z))
+    cld$a <- cld$x^2 + cld$y^2 + cld$z^2
+    cld$t1 <- -sqrt(0^2-(4*cld$a*(-r^2)))/(2*cld$a)
+    cld$t2 <- sqrt(0^2-(4*cld$a*(-r^2)))/(2*cld$a)
+    cld$x1 <- cld$x*cld$t1
+    cld$y1 <- cld$y*cld$t1
+    cld$z1 <- cld$z*cld$t1
+    cld$x2 <- cld$x*cld$t2
+    cld$y2 <- cld$y*cld$t2
+    cld$z2 <- cld$z*cld$t2
+    cld$slp <- cld$z/(sqrt(cld$x^2+ cld$y^2))
+    cld$slp1 <- cld$z1/(sqrt(cld$x1^2+ cld$y1^2))
+    cld$slp2 <- cld$z2/(sqrt(cld$x2^2+ cld$y2^2))
+    
+    #Find correct coordinate based on slope
+    cld<-cld %>% mutate(xs = case_when(sign(slp)==sign(slp1)~ x1,sign(slp)!=sign(slp1)~x2),
+                        ys = case_when(sign(slp)==sign(slp1)~ y1,sign(slp)!=sign(slp1)~y2),
+                        zs = case_when(sign(slp)==sign(slp1)~ z1,sign(slp)!=sign(slp1)~z2))
+    }
+  return(cld)    
+}
+
+sphere_func<-function(cld=cld, type="Data"){
+  #Aim: calculate spherical coordinates. 
+  #Arguments: cld: dataframe with cartesian distances obtained with cld_fun
+  #Output: list of objects s3 and p3. 
+  if (type=="Data") {
+    #Filter points that would hit the ground before hitting the sphere
+    just_sphere <- cld %>% filter(cld$zs > -height)
+    
+    #Filter out points that would strike the sphere before the ground
+    just_grd <- cld %>% filter(cld$zs <= -height)
+    
+    #Calculate Euclidean distance from sensor to point
+    just_sphere$dist_act <- sqrt(just_sphere$x^2 + 
+                                   just_sphere$y^2 + 
+                                   just_sphere$z^2)
+    #Calculate Euclidean distance from sensor to sphere/point intersection
+    just_sphere$dist_sphere <- sqrt(just_sphere$xs^2 + 
+                                      just_sphere$ys^2 +
+                                      just_sphere$zs^2)
+    
+    #Filter out points that actually pass through the sphere
+    pass_sphere <- just_sphere %>% filter(dist_act >= dist_sphere)
+    
+    pass_sphere_g <- just_grd %>% filter(z <= -height)
+    
+    #Create table of x, y, z values where each point did or would have intersected the ground
+    allF <- bind_rows(just_sphere, just_grd)
+    
+    #Create table of x, y, z values where each point that passed the ground intersected it
+    passF <- bind_rows(pass_sphere, pass_sphere_g)
+    
+    #Convert from Cartesian to spherical coordinates
+    s <- as.data.frame(cart2sph(x=allF$xs, 
+                                y=allF$ys, 
+                                z=allF$zs))
+    p <- as.data.frame(cart2sph(x=passF$xs, 
+                                y=passF$ys, 
+                                z=passF$zs))
+    
+    s2 <- s[,c(1,2)]
+    p2 <- p[,c(1,2)]
+    
+    s2$theta <- s$theta*(180/pi)
+    s2$phi <- s$phi*(180/pi)
+    p2$theta <- p$theta*(180/pi)
+    p2$phi <- p$phi*(180/pi)
+    
+    s3 <- st_multipoint(x=as.matrix(s2), dim="XY") # make spatial object
+    p3 <- st_multipoint(x=as.matrix(p2), dim="XY") # make spatial object
+    
+    #create lists and finalize function
+    multipoint_list<-list(s3,p3)
+    names(multipoint_list)<-c("s3","p3")
+  } else{
+      s <- as.data.frame(cart2sph(x=cld$xs, 
+                                  y=cld$ys, 
+                                  z=cld$zs))
+      p <- as.data.frame(cart2sph(x=cld$xs, 
+                                  y=cld$ys, 
+                                  z=cld$zs))
+      
+      s2 <- s[,c(1,2)]
+      p2 <- p[,c(1,2)]
+      
+      s2$theta <- s$theta*(180/pi)
+      s2$phi <- s$phi*(180/pi)
+      p2$theta <- p$theta*(180/pi)
+      p2$phi <- p$phi*(180/pi)
+      
+      s3 <- st_multipoint(x=as.matrix(s2), dim="XY") # make spatial object
+      p3 <- st_multipoint(x=as.matrix(p2), dim="XY") # make spatial object
+      
+      #create lists and finalize function
+      multipoint_list<-list(s3,p3)
+      names(multipoint_list)<-c("s3","p3")
+  }
+  
+  return(multipoint_list)
+} 
+
+pointCount <- function(r, pts){
+  # Idea source: https://gis.stackexchange.com/questions/309407/computing-number-of-points-in-a-raster-grid-cell-in-r
+  # Aim: Calculate the number of points in a raster cell grid. 
+  # Argument: r: radious
+  # Output: r2: raster object with points. 
+  
+  # make a raster of zeroes like the input
+  r2 = r
+  r2[] = 0
+  # get the cell index for each point and make a table:
+  counts = table(cellFromXY(r,pts))
+  # fill in the raster with the counts from the cell index:
+  r2[as.numeric(names(counts))] = counts
+  return(r2)
+}
+
+on_sphere_multi_v2 <- function(tlsData, refData, radii, height, thetaDiv=1, phiDiv=1){
+  # Aim: Transforms a point cloud into a raster showing the points that passed or not pass a certain radious, 
+  # depending on the layer of the raster.
+  # Arguments: tlsData: cloudpoint, radii: list of radious, height: height of scanner.
+  # Output: raster object with different layers, representing each radious. 
+  for(ra in radii){ # Begin for radious loop 
+    if(ra == radii[1]){ # Logic statement of 1st radius
+      r <- ra #read radius
+      list_point<-cld_fun(r=r,tlsData = tlsData, type="Data") %>% sphere_func(type="Data") # apply functions to obtain spherical coordinates 
+      ref_points<-cld_fun(r=r, tlsData = refData, type="Ref") %>% sphere_func(type="Ref")
+      
+      gridRef <- pointCount(r_blank,ref_points$s3)
+      gridS <- pointCount(r_blank, list_point$s3)#create point object of points on the sphere
+      gridP <- pointCount(r_blank, list_point$p3)
+      gridIn <- gridS - gridP#create point object of points that pass the sphere
+
+      null1 <- raster::calc(gridRef, function(x){x[x<=0]<-NA; return(x)}) # make raster??
+      null2 <- null1 >= 0 #??
+
+      out <- gridIn/gridRef
+      out <- raster::calc(out, function(x){x[x<=0]<-0; return(x)})
+      out <- raster::calc(out, function(x){x[x>=1]<-1; return(x)})
+      out <- out*null2#create raster for first radius
+    }else if(ra == radii[2]){# logical statement 2nd radius
+      r<-ra # read radius
+      list_point<-cld_fun(r=r,tlsData = tlsData, type="Data") %>% sphere_func(type="Data") # apply functions to obtain spherical coordinates 
+      
+      first <- out
+      first2 <- raster::calc(first, function(x){x[x>=1]<-NA; return(x)})
+      mask3 <- first2 >= 0
+      
+      gridPre <- gridRef - gridIn
+      gridInPre <- gridIn
+      
+      gridS <- pointCount(r_blank, list_point$s3)#create point object of points on the sphere
+      gridP <- pointCount(r_blank, list_point$p3)
+      gridIn <- gridS - gridP - gridInPre#create point
+      
+      total_re <- gridIn + gridInPre
+    
+      out <- ((gridIn)/gridPre)
+      out <- raster::calc(out, function(x){x[x<= 0]<-0; return(x)})
+      out <- raster::calc(out, function(x){x[x>= 1]<-1; return(x)})
+      out <- out*mask3# make faster for 2nd radius
+      out2 <- stack(first, out) # stack rasters
+    }else{ # logic statement n_th radius
+      r<-ra # read radius
+      list_point<-cld_fun(r=r,tlsData = tlsData, type="Data") %>% sphere_func(type="Data") # apply functions to obtain spherical coordinates 
+      
+      preceed <- out2
+      prior <- out
+      prior2 <- raster::calc(prior, function(x){x[x>=1]<-NA; return(x)})
+      mask3 <- prior2 >= 0
+      
+      gridPre <- gridRef - total_re
+      
+      gridS <- pointCount(r_blank, list_point$s3)#create point object of points on the sphere
+      gridP <- pointCount(r_blank, list_point$p3)
+      gridIn <- gridS - gridP - total_re#create point
+      
+      total_re <- total_re + gridIn
+      
+      out <- ((gridIn)/gridPre)
+      out <- raster::calc(out, function(x){x[x<=0]<-0; return(x)})
+      out <- raster::calc(out, function(x){x[x>=1]<-1; return(x)})
+      out <- out*mask3# make faster for 2nd radius
+      out2 <- stack(preceed, out) # stack rasters
+    }
+  }#Close radius loop
+  names(out2) <- as.character(radii)# name layers
+  return(out2) # set function output. 
+} 
+
+# Applying functions ----
+
+test <- on_sphere_multi_v2(tlsData=tlsData, refData=refData, radii=radii, height=height, thetaDiv=thetaDiv, phiDiv=phiDiv)
+
+writeRaster(test, "D:/sphere_vox.tif") # save data. 
