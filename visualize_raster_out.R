@@ -46,6 +46,7 @@ plotR5 <- tm_shape(test$X10)+
   tm_raster(palette="Greens", colorNA="red")
 tmap_arrange(plotR1, plotR2, plotR3, plotR4, plotR5)
 
+
 head <- read.lasheader("D:/lidar/Shedtest1.las")
 sheddf <- cld_fun(10, refData, type="Ref")
 sheddf2 <- sheddf[,16:18]
